@@ -6,16 +6,19 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"sync"
 	"time"
 )
 
 var (
 	fsize       = 10   // mb
 	bsize       = 3884 // kb
+	batchSize   = 2
 	filePath    = "go-write-file-test.txt"
 	interval    time.Duration // second
 	letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890~!@#$%^&*()_+`-=[];',./{}|:<>?/")
 	goWriteFile = true
+	wg          *sync.WaitGroup
 )
 
 func RandStringRunes(n int) byte {
@@ -66,42 +69,63 @@ func setStringVar(e string, v *string) {
 	}
 }
 
+// scanForNull return true if null found
+func scanForNull(f string) bool {
+
+	b, err := exec.Command("grep", "-Pa", `\x00`, f).CombinedOutput()
+	if err == nil { // grep returns 0 we found null bytes
+		fmt.Printf("GREP FOUND NULL BYTES in file %s\n", f)
+		return true
+	}
+
+	// no nulls found
+	if len(b) > 0 {
+		fmt.Printf("%s\n", b)
+	}
+	fmt.Printf("no null bytes found in file %s: grep: %s\n", f, err)
+	return false
+}
+
+func runWorkload(f string) {
+	defer wg.Done()
+	// delete file if exists and does not contain nulls
+	if _, err := os.Stat(f); err == nil {
+		if scanForNull(f) {
+			fmt.Printf("DETECTED NULL BYTES IN FILE %s\n", f)
+			goWriteFile = false
+			return
+		}
+		err := os.Remove(f)
+		if err != nil {
+			fmt.Printf("failed to delete file: %s\n", err)
+		}
+	}
+
+	err := generateFile(f)
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
 func main() {
 	interval = 10 * time.Second
 
 	setIntVar("FILE_SIZE", &fsize)
 	setIntVar("BLOCK_SIZE", &bsize)
+	setIntVar("BATCH_SIZE", &batchSize)
 	setStringVar("FILE_PATH", &filePath)
 
+	wg = new(sync.WaitGroup)
 	for {
 		if goWriteFile {
+			for i := 0; i < batchSize; i++ {
+				wg.Add(1)
+				go runWorkload(fmt.Sprintf("%s-%d", filePath, i))
 
-			// delete file if exists
-			if _, err := os.Stat(filePath); err == nil {
-				err := os.Remove(filePath)
-				if err != nil {
-					fmt.Printf("failed to delete file: %s\n", err)
-				}
-			}
-
-			err := generateFile(filePath)
-			if err != nil {
-				fmt.Println(err)
-			}
-
-			b, err := exec.Command("grep", "-Pa", `\x00`, filePath).CombinedOutput()
-			if err == nil { // grep returns 0 we found null bytes
-				fmt.Println("GREP FOUND NULL BYTES")
-				goWriteFile = false
-			} else {
-				if len(b) > 0 {
-					fmt.Printf("%s\n", b)
-				}
-				fmt.Printf("no null bytes found: grep: %s\n", err)
 			}
 		}
+		wg.Wait()
 		time.Sleep(interval)
-
 	}
 
 }

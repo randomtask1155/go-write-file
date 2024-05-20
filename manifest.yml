@@ -10,6 +10,7 @@ applications:
     env:
       FILE_PATH: "/var/smb/public/test.txt"
       FILE_SIZE: "1500"
+      BATCH_SIZE: "2"
     services:
       - name: nullsmb
         parameters:
