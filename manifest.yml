@@ -1,0 +1,18 @@
+---
+applications:
+  - name: go-write-file
+    memory: 128M
+    instances: 1
+    buildpack: go_buildpack
+    command: go-write-file
+    health-check-type: process
+    readiness-health-check-type: process
+    env:
+      FILE_PATH: "/var/smb/public/test.txt"
+      FILE_SIZE: "1500"
+    services:
+      - name: nullsmb
+        parameters:
+          username: "Administrator"
+          password: "PASSWORD"
+          mount: "/var/smb/public"
